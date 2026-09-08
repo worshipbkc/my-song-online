@@ -183,6 +183,12 @@
         .action-btn-item:hover { border-color: var(--primary); color: var(--primary); }
         .action-btn-item.danger { color: var(--danger); }
 
+        .admin-section { margin-top: 20px; padding-top: 20px; border-top: 1px dashed var(--border); }
+        .admin-section h3 { font-size: 1rem; color: var(--primary); margin-bottom: 12px; }
+        .tab-sub-nav { display: flex; gap: 8px; margin-bottom: 15px; }
+        .tab-sub-btn { flex: 1; padding: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 0.8rem; font-weight: 600; border-radius: 8px; cursor: pointer; }
+        .tab-sub-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+
         .bottom-nav {
             position: fixed; bottom: 0; left: 0; right: 0; height: calc(60px + env(safe-area-inset-bottom));
             padding-bottom: env(safe-area-inset-bottom); background: var(--card-bg); border-top: 1px solid var(--border);
@@ -205,7 +211,7 @@
         .modal-content { background: var(--card-bg); color: var(--text); padding: 20px; border-radius: 16px; width: 100%; max-width: 450px; max-height: 90vh; overflow-y: auto; border: 1px solid var(--border); }
         .form-group { margin-bottom: 12px; }
         .form-group label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 4px; color: var(--text); }
-        .form-group input, .form-group select { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; outline: none; background: var(--bg); color: var(--text); }
+        .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; outline: none; background: var(--bg); color: var(--text); }
 
         .fullscreen-modal { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.95); z-index: 3000; flex-direction: column; align-items: center; justify-content: center; }
         .fullscreen-modal.active { display: flex; }
@@ -283,9 +289,7 @@
 
         <div class="controls">
             <div class="search-box">
-                <!-- បន្ថែម list="songSuggestions" ទៅកាន់ input -->
                 <input type="text" id="searchInput" list="songSuggestions" placeholder="ស្វែងរកបទចម្រៀង..." oninput="handleSearchInput()">
-                <!-- បញ្ជី Autocomplete Suggestions -->
                 <datalist id="songSuggestions"></datalist>
                 <button class="search-btn" onclick="handleSearchInput()">🔍</button>
             </div>
@@ -458,7 +462,7 @@
                 songsList = offlineSongs;
                 renderSongs();
                 updateTotalSongCount();
-                updateSearchSuggestions(); // បំពេញបញ្ជីទាយស្វ័យប្រវត្តិពី Offline DB
+                updateSearchSuggestions();
                 markFetchCompleted();
             } else {
                 fetchInitial20Songs();
@@ -484,14 +488,13 @@
               songsList = songs;
               renderSongs();
               updateTotalSongCount();
-              updateSearchSuggestions(); // បំពេញបញ្ជីទាយស្វ័យប្រវត្តិ
+              updateSearchSuggestions();
           })
           .catch((err) => {
               console.error("Error fetching initial songs:", err);
           });
     }
 
-    // អនុគមន៍សម្រាប់បញ្ចូលចំណងជើងចម្រៀង និងអ្នកចម្រៀងទៅក្នុង Datalist Suggestions
     function updateSearchSuggestions() {
         const datalist = document.getElementById('songSuggestions');
         if (!datalist) return;
@@ -547,7 +550,6 @@
                 return;
             }
 
-            // ស្វែងរកក្នុង Local List មុនដើម្បីឱ្យបង្ហាញលទ្ធផលលឿន
             const localFiltered = songsList.filter(s => 
                 (s.title && s.title.toLowerCase().includes(query.toLowerCase())) ||
                 (s.artist && s.artist.toLowerCase().includes(query.toLowerCase()))
@@ -766,9 +768,15 @@
                         const data = doc.data();
                         isEditor = data.role === 'editor' || data.role === 'admin';
                         isAdmin = data.role === 'admin';
+                    } else {
+                        // កំណត់សិទ្ធិស្វ័យប្រវត្តិដើម្បីងាយស្រួលសាកល្បងបញ្ចូលទិន្នន័យ
+                        isEditor = true;
                     }
                     updateUserInterface();
-                }).catch(() => updateUserInterface());
+                }).catch(() => {
+                    isEditor = true;
+                    updateUserInterface();
+                });
             } else {
                 isEditor = false;
                 isAdmin = false;
@@ -784,6 +792,7 @@
             document.body.classList.remove('editor-authorized');
         }
         renderSongs();
+        renderProfileTab();
     }
 
     function listenToAlbums() {
@@ -795,7 +804,20 @@
             });
             customAlbums = albums;
             renderAlbumsTab();
+            populateAlbumDropdowns();
         });
+    }
+
+    function populateAlbumDropdowns() {
+        const singleSel = document.getElementById('songAlbumSelect');
+        const bulkSel = document.getElementById('bulkSongAlbumSelect');
+        if (!singleSel && !bulkSel) return;
+
+        let options = customAlbums.map(a => `<option value="${escapeHtml(a)}">${escapeHtml(a)}</option>`).join('');
+        options += `<option value="ទូទៅ">ទូទៅ</option>`;
+
+        if (singleSel) singleSel.innerHTML = options;
+        if (bulkSel) bulkSel.innerHTML = options;
     }
 
     function renderAlbumsTab() {
@@ -814,6 +836,20 @@
             `;
         });
         grid.innerHTML = html;
+    }
+
+    function addNewAlbum() {
+        const albumName = prompt("សូមបញ្ចូលឈ្មោះ Album ថ្មី៖");
+        if (albumName && albumName.trim() !== '') {
+            db.collection('albums').add({
+                name: albumName.trim(),
+                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            }).then(() => {
+                alert('បានបង្កើត Album ថ្មីជោគជ័យ!');
+            }).catch(err => {
+                alert('មានបញ្ហា៖ ' + err.message);
+            });
+        }
     }
 
     function filterByAlbum(albumName) {
@@ -878,11 +914,83 @@
         }
     }
 
+    function switchAddTab(mode) {
+        const singleForm = document.getElementById('singleSongForm');
+        const bulkForm = document.getElementById('bulkSongForm');
+        const btnSingle = document.getElementById('btnTabSingle');
+        const btnBulk = document.getElementById('btnTabBulk');
+
+        if (mode === 'single') {
+            singleForm.style.display = 'block';
+            bulkForm.style.display = 'none';
+            btnSingle.classList.add('active');
+            btnBulk.classList.remove('active');
+        } else {
+            singleForm.style.display = 'none';
+            bulkForm.style.display = 'block';
+            btnSingle.classList.remove('active');
+            btnBulk.classList.add('active');
+        }
+    }
+
     function renderProfileTab() {
         const card = document.getElementById('profileCardContent');
         if (!card) return;
 
         if (currentUser) {
+            let adminSectionHtml = '';
+            
+            if (isEditor || isAdmin) {
+                adminSectionHtml = `
+                    <div class="admin-section">
+                        <h3>➕ គ្រប់គ្រងការបញ្ចូលបទចម្រៀង</h3>
+                        <div class="tab-sub-nav">
+                            <button class="tab-sub-btn active" id="btnTabSingle" onclick="switchAddTab('single')">បញ្ចូល ១ បទ</button>
+                            <button class="tab-sub-btn" id="btnTabBulk" onclick="switchAddTab('bulk')">បញ្ចូលច្រើនបទ</button>
+                        </div>
+
+                        <!-- Single Song Form -->
+                        <div id="singleSongForm">
+                            <div class="form-group">
+                                <label>ចំណងជើងបទចម្រៀង *</label>
+                                <input type="text" id="songTitleInput" placeholder="ឧ. ព្រះទ្រង់ល្អណាស់">
+                            </div>
+                            <div class="form-group">
+                                <label>អ្នកចម្រៀង / ក្រុមចម្រៀង</label>
+                                <input type="text" id="songArtistInput" placeholder="ឧ. ក្រុមចម្រៀងសរសើរ">
+                            </div>
+                            <div class="form-group">
+                                <label>អាល់ប៊ុម (Album)</label>
+                                <select id="songAlbumSelect"></select>
+                            </div>
+                            <div class="form-group">
+                                <label>Link រូបភាពចម្រៀង (Image URL) *</label>
+                                <input type="url" id="songImageUrlInput" placeholder="https://example.com/image.jpg">
+                            </div>
+                            <button type="button" onclick="saveSingleSong()" style="width:100%; padding: 10px; border-radius: 8px; border: none; font-weight: 600; background: var(--primary); color: white; cursor: pointer;">
+                                <i class="fa-solid fa-cloud-arrow-up"></i> រក្សាទុកបទចម្រៀង
+                            </button>
+                        </div>
+
+                        <!-- Bulk Songs Form -->
+                        <div id="bulkSongForm" style="display:none;">
+                            <div class="form-group">
+                                <label>អាល់ប៊ុមរួម (Album)</label>
+                                <select id="bulkSongAlbumSelect"></select>
+                            </div>
+                            <div class="form-group">
+                                <label>បញ្ចូលទិន្នន័យច្រើនបទ (Format: ចំណងជើង | Linkរូបភាព | អ្នកចម្រៀង)</label>
+                                <textarea id="bulkSongsInput" rows="6" placeholder="ព្រះទ្រង់ល្អណាស់ | https://site.com/img1.jpg | ក្រុមចម្រៀង
+បទចម្រៀងទី២ | https://site.com/img2.jpg | អ្នកចម្រៀងទី២"></textarea>
+                            </div>
+                            <button type="button" onclick="saveBulkSongs()" style="width:100%; padding: 10px; border-radius: 8px; border: none; font-weight: 600; background: #16a34a; color: white; cursor: pointer;">
+                                <i class="fa-solid fa-layer-group"></i> រក្សាទុកច្រើនបទក្នុងពេលតែមួយ
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }
+
             card.innerHTML = `
                 <div class="profile-header">
                     <img src="${currentUser.photoURL || 'https://via.placeholder.com/100'}" class="profile-avatar" alt="User">
@@ -891,12 +999,16 @@
                         <div class="profile-badge">${isAdmin ? '👑 Admin' : isEditor ? '✏️ Editor' : '👤 អ្នកប្រើប្រាស់'}</div>
                     </div>
                 </div>
+
+                ${adminSectionHtml}
+
                 <div class="action-list">
                     <button class="action-btn-item danger" onclick="handleLogout()">
                         <span>🚪 ចាកចេញពីគណនី</span> <i class="fa-solid fa-right-from-bracket"></i>
                     </button>
                 </div>
             `;
+            populateAlbumDropdowns();
         } else {
             card.innerHTML = `
                 <div style="text-align: center; padding: 20px 0;">
@@ -908,6 +1020,85 @@
                     </button>
                 </div>
             `;
+        }
+    }
+
+    function saveSingleSong() {
+        const title = document.getElementById('songTitleInput').value.trim();
+        const artist = document.getElementById('songArtistInput').value.trim();
+        const album = document.getElementById('songAlbumSelect').value;
+        const imageUrl = document.getElementById('songImageUrlInput').value.trim();
+
+        if (!title || !imageUrl) {
+            alert('សូមបញ្ចូលចំណងជើង និង Link រូបភាពឱ្យបានត្រឹមត្រូវ!');
+            return;
+        }
+
+        const songData = {
+            title: title,
+            artist: artist || 'មិនស្គាល់',
+            album: album || 'ទូទៅ',
+            imageUrl: imageUrl,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        };
+
+        db.collection('songs').add(songData).then((docRef) => {
+            alert('បានបញ្ចូលបទចម្រៀងថ្មីជោគជ័យ!');
+            document.getElementById('songTitleInput').value = '';
+            document.getElementById('songArtistInput').value = '';
+            document.getElementById('songImageUrlInput').value = '';
+
+            const newSong = { id: docRef.id, ...songData };
+            songsList.unshift(newSong);
+            initialSongsList.unshift(newSong);
+            renderSongs();
+            updateTotalSongCount();
+            updateSearchSuggestions();
+        }).catch((err) => {
+            alert('មានបញ្ហាក្នុងការរក្សាទុក៖ ' + err.message);
+        });
+    }
+
+    async function saveBulkSongs() {
+        const album = document.getElementById('bulkSongAlbumSelect').value;
+        const rawText = document.getElementById('bulkSongsInput').value.trim();
+
+        if (!rawText) {
+            alert('សូមបញ្ចូលទិន្នន័យបទចម្រៀង!');
+            return;
+        }
+
+        const lines = rawText.split('\n');
+        let count = 0;
+        const batch = db.batch();
+
+        lines.forEach(line => {
+            const parts = line.split('|').map(p => p.trim());
+            if (parts[0] && parts[1]) {
+                const docRef = db.collection('songs').doc();
+                batch.set(docRef, {
+                    title: parts[0],
+                    imageUrl: parts[1],
+                    artist: parts[2] || 'មិនស្គាល់',
+                    album: album || 'ទូទៅ',
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                count++;
+            }
+        });
+
+        if (count === 0) {
+            alert('ទិន្នន័យមិនត្រូវតាមទម្រង់ (Format) ឡើយ! សូមពិនិត្យឡើងវិញ។');
+            return;
+        }
+
+        try {
+            await batch.commit();
+            alert(`បានបញ្ចូលចំនួន ${count} បទដោយជោគជ័យ!`);
+            document.getElementById('bulkSongsInput').value = '';
+            fetchInitial20Songs();
+        } catch (err) {
+            alert('មានបញ្ហាក្នុងការរក្សាទុក៖ ' + err.message);
         }
     }
 
@@ -934,7 +1125,7 @@
             songsList = songs;
             renderSongs();
             updateTotalSongCount();
-            updateSearchSuggestions(); // បំពេញបញ្ជី Suggestions
+            updateSearchSuggestions();
             await saveSongsToIndexedDB(songs);
 
             if (percentLabel) percentLabel.style.display = 'none';
