@@ -122,24 +122,40 @@
         .search-box input { width: 100%; padding: 8px 36px 8px 12px; border: 1px solid var(--border); border-radius: 10px; outline: none; background: var(--card-bg); color: var(--text); font-size: 0.85rem; }
         .search-btn { position: absolute; right: 6px; background: none; border: none; font-size: 0.9rem; cursor: pointer; padding: 4px; }
         
+        .search-dropdown {
+            position: absolute;
+            top: 100%; left: 0; right: 0;
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            max-height: 250px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+            margin-top: 4px;
+        }
+        .search-dropdown.active { display: block; }
+        .dropdown-item {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border);
+            cursor: pointer;
+            transition: background 0.2s;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .dropdown-item:last-child { border-bottom: none; }
+        .dropdown-item:hover, .dropdown-item:active { background: var(--border); }
+        .dropdown-item .item-title { font-size: 0.85rem; font-weight: 700; color: var(--text); }
+        .dropdown-item .item-artist { font-size: 0.72rem; color: var(--text-muted); }
+
         .theme-toggle-btn { background: var(--card-bg); border: 1px solid var(--border); color: var(--text); padding: 8px 12px; border-radius: 10px; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; justify-content: center; }
 
-        /* Grid Layout & List View Layout */
         .song-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
         @media (min-width: 600px) {
             .song-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
         }
-
-        .song-list-mode { display: flex; flex-direction: column; gap: 8px; }
-        .song-list-item { 
-            background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; 
-            padding: 10px 14px; display: flex; align-items: center; justify-content: space-between; 
-            cursor: pointer; transition: background 0.2s;
-        }
-        .song-list-item:active { background: var(--border); }
-        .song-list-item .title-info { display: flex; flex-direction: column; gap: 2px; }
-        .song-list-item .title-info .main-title { font-weight: 700; font-size: 0.88rem; color: var(--text); }
-        .song-list-item .title-info .sub-artist { font-size: 0.75rem; color: var(--text-muted); }
 
         .song-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; position: relative; }
         .song-img-container { width: 100%; aspect-ratio: 3/4; background: var(--border); display: flex; align-items: center; justify-content: center; overflow: hidden; cursor: pointer; position: relative; }
@@ -276,18 +292,19 @@
 
         <div class="controls">
             <div class="search-box">
-                <input type="text" id="searchInput" placeholder="ស្វែងរកចំណងជើងចម្រៀង..." oninput="handleSearchInput()">
+                <input type="text" id="searchInput" placeholder="ស្វែងរកចំណងជើងចម្រៀង..." oninput="handleSearchDebounce()" autocomplete="off">
                 <button class="search-btn" onclick="handleSearchInput()">🔍</button>
+                
+                <div class="search-dropdown" id="searchDropdown"></div>
             </div>
             <button class="theme-toggle-btn" id="themeToggleBtn" onclick="toggleDarkMode()">🌙</button>
         </div>
 
         <div class="filter-chips">
-            <button class="chip-btn active" onclick="setQuickFilter('ALL', this)">🎵 ចម្រៀងថ្មីៗ ១០បទ</button>
+            <button class="chip-btn active" onclick="setQuickFilter('ALL', this)">🎵 ចម្រៀងទាំងអស់</button>
             <button class="chip-btn" onclick="setQuickFilter('FAV', this)">❤️ ចូលចិត្ត</button>
         </div>
 
-        <!-- ផ្ទៃបង្ហាញចម្រៀង -->
         <div id="songContainer" class="song-grid">
             <div class="empty-state" id="loadingState">🎵 កំពុងផ្ទុកទិន្នន័យ...</div>
         </div>
@@ -463,6 +480,7 @@
     let initialSongsList = [];
     let allSongTitlesIndex = [];
     let currentRenderList = []; 
+    let searchDebounceTimer = null;
     
     let customAlbums = ['ទំនុកដំកើង', 'ទំនុកខ្មែរបរិសុទ្ធ'];
     let playlists = JSON.parse(localStorage.getItem('user_playlists') || '{}');
@@ -484,12 +502,17 @@
         fetchInitialSongs();
         fetchAllTitlesForSearch();
         setupTouchSwipeListeners();
+
+        document.addEventListener('click', function(e) {
+            const searchBox = document.querySelector('.search-box');
+            if (searchBox && !searchBox.contains(e.target)) {
+                hideSearchDropdown();
+            }
+        });
     };
 
-    // ទាញយក ១០ បទដំបូងមកបង្ហាញ (ការពារ Memory Crash)
     function fetchInitialSongs() {
         db.collection("songs")
-          .limit(10)
           .get()
           .then((snapshot) => {
               initialSongsList = [];
@@ -509,9 +532,10 @@
           });
     }
 
-    // ទាញយកតែចំណងជើងសរុបមកស្វែងរក
     function fetchAllTitlesForSearch() {
-        db.collection("songs").get().then((snapshot) => {
+        db.collection("songs")
+          .get()
+          .then((snapshot) => {
             allSongTitlesIndex = [];
             snapshot.forEach((doc) => {
                 const data = doc.data();
@@ -578,36 +602,53 @@
         }).join('');
     }
 
+    function handleSearchDebounce() {
+        clearTimeout(searchDebounceTimer);
+        searchDebounceTimer = setTimeout(() => {
+            handleSearchInput();
+        }, 300);
+    }
+
     function handleSearchInput() {
         const query = document.getElementById('searchInput').value.trim().toLowerCase();
-        const container = document.getElementById('songContainer');
+        const dropdown = document.getElementById('searchDropdown');
 
         if (!query) {
+            hideSearchDropdown();
             renderInitialGrid(initialSongsList);
             return;
         }
 
         const matched = allSongTitlesIndex.filter(item => 
             item.title.toLowerCase().includes(query) || 
-            item.artist.toLowerCase().includes(query)
+            item.artist.toLowerCase().includes(query) ||
+            item.album.toLowerCase().includes(query)
         );
 
         if (matched.length === 0) {
-            container.className = "song-grid";
-            container.innerHTML = '<div class="empty-state">រកមិនឃើញបទចម្រៀងឡើយ</div>';
+            dropdown.innerHTML = '<div class="dropdown-item"><span class="item-title">រកមិនឃើញបទចម្រៀងឡើយ</span></div>';
+            dropdown.classList.add('active');
             return;
         }
 
-        container.className = "song-list-mode";
-        container.innerHTML = matched.map(song => `
-            <div class="song-list-item" onclick="loadAndRenderSingleSong('${song.id}')">
-                <div class="title-info">
-                    <span class="main-title">🎼 ${escapeHtml(song.title)}</span>
-                    <span class="sub-artist">🎤 ${escapeHtml(song.artist || 'មិនស្គាល់')} ${song.album ? '• (' + escapeHtml(song.album) + ')' : ''}</span>
-                </div>
-                <i class="fa-solid fa-chevron-right" style="color:var(--text-muted); font-size:0.8rem;"></i>
+        dropdown.innerHTML = matched.slice(0, 10).map(song => `
+            <div class="dropdown-item" onclick="selectSongFromDropdown('${song.id}')">
+                <span class="item-title">🎼 ${escapeHtml(song.title)}</span>
+                <span class="item-artist">🎤 ${escapeHtml(song.artist || 'មិនស្គាល់')} ${song.album ? '• (' + escapeHtml(song.album) + ')' : ''}</span>
             </div>
         `).join('');
+
+        dropdown.classList.add('active');
+    }
+
+    function hideSearchDropdown() {
+        const dropdown = document.getElementById('searchDropdown');
+        if (dropdown) dropdown.classList.remove('active');
+    }
+
+    function selectSongFromDropdown(songId) {
+        hideSearchDropdown();
+        loadAndRenderSingleSong(songId);
     }
 
     function loadAndRenderSingleSong(songId) {
@@ -626,6 +667,7 @@
 
         if (type === 'ALL') {
             document.getElementById('searchInput').value = '';
+            hideSearchDropdown();
             renderInitialGrid(initialSongsList);
         } else if (type === 'FAV') {
             const favIds = playlists['Favorite'] || [];
@@ -633,7 +675,7 @@
                 document.getElementById('songContainer').innerHTML = '<div class="empty-state">មិនទាន់មានចម្រៀងចូលចិត្តនៅឡើយទេ</div>';
                 return;
             }
-            db.collection("songs").where(firebase.firestore.FieldPath.documentId(), 'in', favIds.slice(0, 10)).get().then(snap => {
+            db.collection("songs").where(firebase.firestore.FieldPath.documentId(), 'in', favIds).get().then(snap => {
                 const favList = [];
                 snap.forEach(d => favList.push({ id: d.id, ...d.data() }));
                 renderInitialGrid(favList);
@@ -670,7 +712,7 @@
             <span style="cursor:pointer; color:var(--danger); font-size:0.75rem; margin-left:4px;" onclick="resetFilters()">(ជម្រះ)</span>
         `;
         
-        db.collection("songs").where("album", "==", albumName).limit(10).get().then(snap => {
+        db.collection("songs").where("album", "==", albumName).get().then(snap => {
             const albumSongs = [];
             snap.forEach(d => albumSongs.push({ id: d.id, ...d.data() }));
             renderInitialGrid(albumSongs);
@@ -731,7 +773,7 @@
             document.getElementById('songContainer').innerHTML = '<div class="empty-state">គ្មានចម្រៀងក្នុង Playlist នេះឡើយ</div>';
             return;
         }
-        db.collection("songs").where(firebase.firestore.FieldPath.documentId(), 'in', songIds.slice(0, 10)).get().then(snap => {
+        db.collection("songs").where(firebase.firestore.FieldPath.documentId(), 'in', songIds).get().then(snap => {
             const list = [];
             snap.forEach(d => list.push({ id: d.id, ...d.data() }));
             renderInitialGrid(list);
@@ -945,7 +987,6 @@
         }
     }
 
-    // អនុវត្តន៍បង្រួមរូបភាពកម្រិតខ្ពស់ ដើម្បីការពារទូរស័ព្ទ Crash
     function processAndCompressFile(file, imgElemId, containerId, callback) {
         if (!file) return;
         const reader = new FileReader();
@@ -956,7 +997,6 @@
                 let width = img.width;
                 let height = img.height;
                 
-                // កំណត់ Maximum resolution 600px ការពារ Memory Crash
                 const maxDim = 600; 
 
                 if (width > maxDim || height > maxDim) {
@@ -974,7 +1014,6 @@
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(img, 0, 0, width, height);
 
-                // បន្ថយ Quality មកត្រឹម 0.5 (50%)
                 const compressedBase64 = canvas.toDataURL('image/jpeg', 0.5); 
                 document.getElementById(imgElemId).src = compressedBase64;
                 document.getElementById(containerId).style.display = 'block';
